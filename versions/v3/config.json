@@ -1,0 +1,44 @@
+{
+  "relay_guild": "1318677716332974191",
+  "relay_temp_category": "1334628954350420029",
+   "debug_channel": "1441523275510579332",
+
+  "relay_region_pings": {
+    "eu": "1318679517849452664",
+    "na": "1442105518553305149",
+    "asia": "1442111197209169990"
+  },
+  
+  "session_timeout_ms": 3600000,
+  "wait_for_code_ms": 120000,
+  "wait_for_count_ms": 600000,
+  "post_full_delay_ms": 7000,
+
+
+   "servers": {
+       "1172405973432946819": {
+        "name": "marco's server",
+        "region": "eu",
+        "ping_role": "1393218718363947039",
+        "count_channel":"1172409186831826974",
+        "invite": "https://discord.gg/pD93J9fxZq"
+      },
+
+
+      "1026604059580448875": {
+        "name": "french os",
+        "region": "eu",
+        "ping_role": "1442597986579382343",
+        "count_channel": "1099848429083033670",
+        "invite": "https://discord.gg/VjaewjX4R3"
+      },
+
+      "1115587657930653708": {
+        "name": "cat in a box",
+        "region": "eu",
+        "ping_role": "1121506626025820190",
+        "count_channel": "1115587659138601004",
+        "invite": "no public links allowed... sorry"
+      }
+    }
+  }
