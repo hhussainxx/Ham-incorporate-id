@@ -14,6 +14,17 @@ const client = new Client({
     partials: [Partials.Channel]
 });
 
+
+const logStream = fs.createWriteStream("./console.log", { flags: "a" });
+const origLog = console.log;
+
+console.log = (...args) => {
+    const line = args.map(a => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
+    logStream.write(line + "\n");
+    origLog(...args);
+};
+
+
 // utils
 function now() { return Date.now(); }
 async function debugDC(text) {
@@ -69,16 +80,27 @@ async function createTempChannel(code) {
     const base = "the-gathering-begins";
     let name = `${base}-${safeCode}`.slice(0, 90);
 
+    const existing = relayGuild.channels.cache.find(
+        c => c.name === name && c.parentId === categoryId
+    );
+
+    if (existing) {
+        console.log(`[TEMP CHANNEL REUSE] Using existing channel ${existing.id} for code ${code}`);
+        return { id: existing.id, reused: true };
+    }
+
     let index = 1;
     while (relayGuild.channels.cache.find(c => c.name === name && c.parentId === categoryId)) {
         index += 1;
-        name = `${base}-${safeCode}-${index}`.slice(0, 90); 
+        name = `${base}-${safeCode}-${index}`.slice(0, 90);
         if (index > 50) break;
     }
 
     const opts = { type: ChannelType.GuildText, parent: categoryId, reason: `temp channel for code ${code}` };
     const ch = await relayGuild.channels.create({ name, ...opts });
-    return ch.id;
+
+    console.log(`[TEMP CHANNEL CREATED] ${ch.id} for code ${code}`);
+    return { id: ch.id, reused: false };
 }
 
 async function sendPlainToChannel(channelId, text, components = []) {
@@ -235,7 +257,7 @@ async function updatePlayerCountForSession(session, count, originGuildId = null,
                         players: `${match.numPlayers}/${match.lobbySize}`
                     });
             } else {
-                debugDC(
+                console.log(
                     "[CLARION VALIDATION] no lobby owned by author; falling back to message-based counts",
                     { ign }
                 );
@@ -260,7 +282,7 @@ async function updatePlayerCountForSession(session, count, originGuildId = null,
                 session.lastClarionState.expected === newState.expected &&
                 session.lastClarionState.remaining === newState.remaining
             ) {
-                debugDC(`duplicate clarion state prevented for ${session.code}: ${JSON.stringify(newState)}`);
+                console.log(`duplicate clarion state prevented for ${session.code}: ${JSON.stringify(newState)}`);
                 return;
             }
 
@@ -347,7 +369,7 @@ async function updatePlayerCountForSession(session, count, originGuildId = null,
         }
 
         if (session.lastPlayers === count) {
-            debugDC(`duplicate player count prevented for ${session.code}: ${count}/6`);
+            console.log(`duplicate player count prevented for ${session.code}: ${count}/6`);
             return;
         }
         session.lastPlayers = count;
@@ -395,7 +417,7 @@ async function updatePlayerCountForSession(session, count, originGuildId = null,
         }
     } catch (e) {
         console.log("updatePlayerCountForSession ERROR:", e);
-        debugDC("updatePlayerCountForSession ERROR: " + (e.stack || e.message));
+        console.log("updatePlayerCountForSession ERROR: " + (e.stack || e.message));
     }
 }
 
@@ -418,7 +440,7 @@ async function createSessionFromStaging(guildId) {
     if (!s.pingSeen || !s.code || s.have === null) return null;
 
     const code = s.code;
-    const tempId = await createTempChannel(code).catch(err => { debugDC(`createTempChannel err ${err.message}`); return null; });
+    const { id: tempId, reused } = await createTempChannel(code).catch(err => { console.log(`createTempChannel err ${err.message}`); return null; });
     if (!tempId) return null;
 
     let session = sessions.get(code);
@@ -460,8 +482,10 @@ async function createSessionFromStaging(guildId) {
         tempId,
         "If the custom game lobby has reached its **full** six players, then this channel has served its purpose. **Close it** to maintain order."
     );
-    await sendPlainToChannel(tempId, "delete channel:", drekarDeleteButtonRow());
 
+    if (!reused) {
+    await sendPlainToChannel(tempId, null, drekarDeleteButtonRow());
+}
     if (s.have !== null) {
         await updatePlayerCountForSession(session, s.have, guildId, s.rawText || "", s.authorId);
     }
@@ -498,7 +522,7 @@ function promoteToCountWait(guildId) {
     s.timers = s.timers || {};
     if (s.timers.countTimer) clearTimeout(s.timers.countTimer);
     s.timers.countTimer = setTimeout(() => {
-        debugDC(`count wait expired for guild ${guildId}`);
+        console.log(`count wait expired for guild ${guildId}`);
         clearStaging(guildId);
     }, WAIT_FOR_COUNT_MS);
 }
@@ -575,7 +599,7 @@ client.on("messageCreate", async (msg) => {
 
             if (s.pingSeen) promoteToCountWait(guildId);
             else if (!s.timers.pingCodeTimer) {
-                s.timers.pingCodeTimer = setTimeout(() => { debugDC(`ping+code wait expired for guild ${guildId}`); clearStaging(guildId); }, WAIT_FOR_CODE_MS);
+                s.timers.pingCodeTimer = setTimeout(() => { console.log(`ping+code wait expired for guild ${guildId}`); clearStaging(guildId); }, WAIT_FOR_CODE_MS);
             }
         }
 
@@ -616,7 +640,7 @@ client.on("messageCreate", async (msg) => {
     } catch (e) {
         console.log("updatePlayerCountForSession ERROR:", e);
         console.log("STACK:", e.stack);
-        debugDC(" updatePlayerCountForSession ERROR: " + (e.stack || e.message));
+        console.log(" updatePlayerCountForSession ERROR: " + (e.stack || e.message));
     }
 
 });
@@ -632,7 +656,7 @@ async function endSession(session, reasonText, originGuildId = null) {
         }
         
     } catch (e) {
-        debugDC("endSession error", e.message);
+        console.log("endSession error", e.message);
     } finally {
         if (session.timeout) clearTimeout(session.timeout);
         sessions.delete(session.code);
