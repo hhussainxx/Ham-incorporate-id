@@ -7,6 +7,7 @@ i was a norms player for a long time. about a year ago, when chaos mode released
 i ended up making a discord server for customs after multiple people asked for one but didnt want to run it themselves. that server has existed for around two years now.
 over time, a question kept coming up: what actually makes this server different?
 most servers already have a custom games role you can ping. the "problem" is-that, every server is isolated. players sit in a servers, sometimes, pings get missed and lobbies often die early, especially in smaller communities.
+
 the idea behind ham-incorporate-id is simple:
 instead of every server shouting into its own corner, connect them. if they want. 
 
