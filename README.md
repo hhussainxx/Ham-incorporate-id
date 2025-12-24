@@ -6,9 +6,12 @@ a centralised custom game relay for (omega strikers) custom lobbies.
 i was a norms player for a long time. about a year ago, when chaos mode released, norms, in eu, effectively died. ranked was never something i enjoyed, so the options were 'ither stop playing or rely on custom games.
 i ended up making a discord server for customs after multiple people asked for one but didnt want to run it themselves. that server has existed for around two years now.
 over time, a question kept coming up: what actually makes this server different?
-most servers already have a custom games role you can ping. the problem is that every server is isolated. players sit in multiple servers, sometimes, pings get missed and lobbies die because the pool is fragmented.
+most servers already have a custom games role you can ping. the "problem" is that every server is isolated. players sit in a servers, sometimes, pings get missed and lobbies often die early, especially in smaller communities.
 the idea behind ham-incorporate-id is simple:
-instead of every server shouting into its own corner, connect them.
+instead of every server shouting into its own corner, connect them. if they want. 
+
+i respect your privacy; most servers create a separate role specifically for this system, because, they would rather prioritise pinging their own community first; each server has its own atmosphere and culture, which attracts certain types of members. they dont want to ping my server, without the members building trust. not just to my bot but-also to my members it brings.
+the goal is not to replace individual servers, but to give them a wider pool to fall back on when they need it.
 
 ## what the bot does
 - listens for custom game pings and player counts in partnered servers
@@ -34,7 +37,6 @@ this repository does not include:
 - tokens
 - private configs
 - server specific ids
-
 you will need to provide your own `.env` and `config.json`.
 
 ## disclaimer
