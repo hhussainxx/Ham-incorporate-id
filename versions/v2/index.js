@@ -1,10 +1,6 @@
-// index.js - unified staging + flexible count parser (updated)
 const { Client, GatewayIntentBits, Partials, ChannelType } = require("discord.js");
 const fs = require("fs");
-
-// load config
 const config = JSON.parse(fs.readFileSync("./config.json", "utf8"));
-
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -13,8 +9,6 @@ const client = new Client({
     ],
     partials: [Partials.Channel]
 });
-
-// utils
 
 function now() { return Date.now(); }
 async function debugDC(text) {
@@ -28,16 +22,13 @@ async function debugDC(text) {
     }
 }
 
-// session & staging stores
-const sessions = new Map();              // code -> session
-const lastSessionForServer = new Map();  // guildId -> code
-const staging = new Map();               // guildId -> { code, have, pingSeen, timers, createdAt, reused }
+const sessions = new Map();             
+const lastSessionForServer = new Map();  
+const staging = new Map();  
 
-// persisted/recent code memory for reuse
-const lastCodes = new Map();            // guildId -> { code, ts }
-const lastCodeByUser = new Map();       // guildId -> Map(userId -> { code, ts })
+const lastCodes = new Map();            
+const lastCodeByUser = new Map();    
 
-// defaults (config overrideable)
 const WAIT_FOR_CODE_MS = config.wait_for_code_ms ?? 120000; // 2 minutes
 const WAIT_FOR_COUNT_MS = config.wait_for_count_ms ?? 10 * 60 * 1000; // 10 minutes
 const POST_FULL_DELAY_MS = config.post_full_delay_ms ?? 7000; // 7 seconds
@@ -51,7 +42,7 @@ function getActiveSessionByCode(code) {
     return sessions.get(code) || null;
 }
 
-// helper: region ping role for a guild
+
 function getRegionPingRole(guildId) {
     const server = config.servers[guildId];
     if (!server || !server.region) return null;
@@ -83,14 +74,12 @@ async function createTempChannel(code) {
     return ch.id;
 }
 
-// send helper - content must include any role mentions required
 async function sendPlainToChannel(channelId, text, components = []) {
     const ch = client.channels.cache.get(channelId);
     if (!ch) return;
     await ch.send({ content: text, allowedMentions: { roles: Object.values(config.relay_region_pings || {}) }, components }).catch(() => null);
 }
 
-// drekar delete button row
 function drekarDeleteButtonRow() {
     return [{
         type: 1,
@@ -122,7 +111,6 @@ function serverLabelMessagesForGuild(guildId) {
     return [`[${s.name}]`];
 }
 
-// count parser - permissive
 const WORD_NUM = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
 function wordsToNum(w) { w = String(w).toLowerCase(); return WORD_NUM[w] ?? null; }
 
@@ -163,7 +151,6 @@ function extractPlayerCountFromText(text) {
     return null;
 }
 
-// extract code - flexible pattern
 function extractCode(text) {
     if (!text) return null;
     const CODE_REGEX = /\b([A-Z][a-z]{3,10}){3}\b/;  // game code
@@ -171,7 +158,6 @@ function extractCode(text) {
     return match ? match[0] : null;
 }
 
-// memory helpers
 function storeLastCodeForGuildAndUser(guildId, code, userId) {
     if (!guildId || !code) return;
     lastCodes.set(guildId, { code, ts: now() });
@@ -271,7 +257,7 @@ async function updatePlayerCountForSession(session, count, originGuildId = null,
 
 
 
-// create session helper
+
 async function createSessionFromStaging(guildId) {
     const s = staging.get(guildId);
     if (!s || !s.code) return null;
@@ -312,15 +298,11 @@ async function createSessionFromStaging(guildId) {
     sessions.set(code, session);
     lastSessionForServer.set(guildId, code);
 
-    // send labels and intro and delete button
     const labels = serverLabelMessagesForGuild(guildId);
     for (const m of labels) await sendPlainToChannel(tempId, m).catch(() => null);
     await sendPlainToChannel(tempId, "If the custom game lobby has reached its **full** six, players, then this channel has served its purpose. **Close it** to maintain order.");
     await sendPlainToChannel(tempId, "", drekarDeleteButtonRow());
 
-
-
-    // region ping role and code post; capture message id for later edits
     const ch = client.channels.cache.get(tempId);
     let disclaimer = "";
     if (s.reused) disclaimer = "\n*(reused from earlier; verify if needed)*";
@@ -350,15 +332,12 @@ async function createSessionFromStaging(guildId) {
 
     // start inactivity timer
     session.timeout = setTimeout(() => endSession(session, "session ended (inactive)"), INACTIVITY_MS);
-
-    // clear staging for guild
     clearStaging(guildId);
 
     // if count is full, end session after short delay
     if (s.have >= 6) {
         setTimeout(() => endSession(session, "session ended (full, 6/6)"), POST_FULL_DELAY_MS);
     }
-
     return session;
 }
 
@@ -372,7 +351,7 @@ function clearStaging(guildId) {
     staging.delete(guildId);
 }
 
-// when ping+code both present -> start count timer
+// when ping+code both present: start count timer
 function promoteToCountWait(guildId) {
     const s = staging.get(guildId);
     if (!s) return;
@@ -388,7 +367,6 @@ function promoteToCountWait(guildId) {
     }, WAIT_FOR_COUNT_MS);
 }
 
-// message handler
 client.on("messageCreate", async (msg) => {
     try {
         if (msg.author.bot) return;
@@ -417,11 +395,9 @@ client.on("messageCreate", async (msg) => {
         // filter out messages from the wrong channels
         if (serverCfg.count_channel) {
             if (msg.channel.id !== serverCfg.count_channel) {
-                // check using the same parser the bot uses for counts
                 const maybeCount = extractPlayerCountFromText(raw);
 
                 if (maybeCount !== null) {
-
                     console.log("DEBUG: blocked by count_channel filter", {
                         raw,
                         guildId,
@@ -435,17 +411,13 @@ client.on("messageCreate", async (msg) => {
         }
 
 
-        // detect role ping robustly
+
         const hasRolePing = msg.mentions.roles.has(serverCfg.ping_role) || raw.includes(`<@&${serverCfg.ping_role}>`) || raw.includes(`<@${serverCfg.ping_role}>`);
-
-        // extract code and possible count
         const code = extractCode(raw);
-        const have = extractPlayerCountFromText(raw); // null or 1..6
-
+        const have = extractPlayerCountFromText(raw); 
         // record code memory if a user posts a code
         if (code) storeLastCodeForGuildAndUser(guildId, code, msg.author.id);
 
-        // staging object ensure
         let s = staging.get(guildId);
         if (!s) {
             s = { code: null, have: null, pingSeen: false, timers: {}, createdAt: null, reused: false };
@@ -455,7 +427,6 @@ client.on("messageCreate", async (msg) => {
         s.originChannelId = msg.channel.id;
         s.rawText = raw;
 
-        // handle role ping (with or without code)
         if (hasRolePing) {
             s.pingSeen = true;
             s.createdAt = s.createdAt || now();
@@ -467,7 +438,6 @@ client.on("messageCreate", async (msg) => {
             }
         }
 
-        // if message includes code
         if (code) {
             // if there is an active session for this guild, update its code message if needed
             const last = lastSessionForServer.get(guildId);
@@ -508,18 +478,15 @@ client.on("messageCreate", async (msg) => {
             }
         }
 
-        // if message contains count info
         if (have !== null) {
             if (s.code && s.pingSeen) {
                 s.have = have;
                 await createSessionFromStaging(guildId);
                 return;
             }
-
-            // else store and keep waiting
             s.have = have;
 
-            // attempt reuse: if ping present and no code, try to auto-fill from memory
+            // attempt reuse: if ping and no code, try to auto-fill from memory
             if (!s.code && s.pingSeen && !code && s.have !== null) {
                 const reused = getReusableCodeForGuildAndUser(guildId, msg.author.id);
                 if (reused) {
@@ -532,16 +499,13 @@ client.on("messageCreate", async (msg) => {
             }
         }
 
-        // if we have all three (ping,code, player-count) present -> create session
+        // if we have all three (ping,code, player-count) present: create session
         if (s.code && s.pingSeen && s.have !== null) {
             await createSessionFromStaging(guildId);
             return;
         }
-
-        // if message had both ping+code in same message
+        
         if (hasRolePing && code) return;
-
-        // route counts to existing sessions fallback (lastSessionForServer)
         if ((!s.code && !s.pingSeen) && have !== null) {
             let target = null;
             if (sessions.size === 1) target = [...sessions.values()][0];
@@ -575,7 +539,6 @@ client.on("messageCreate", async (msg) => {
     }
 });
 
-// session count updates originating from within active sessions (normal flow)
 async function forwardCountMessageToSession(guildId, count) {
     const last = lastSessionForServer.get(guildId);
     if (last && sessions.has(last)) {
@@ -588,7 +551,6 @@ async function forwardCountMessageToSession(guildId, count) {
     }
 }
 
-//     store last code in guild memory on end (endSession)
 async function endSession(session, reasonText, originGuildId = null) {
     try {
         if (session.tempChannelId) {
@@ -612,7 +574,6 @@ async function endSession(session, reasonText, originGuildId = null) {
     }
 }
 
-// periodic inactivity enforcement
 setInterval(() => {
     const cutoff = now() - INACTIVITY_MS;
     for (const session of sessions.values()) {
@@ -622,10 +583,8 @@ setInterval(() => {
     }
 }, 30000);
 
-// ready
 client.on("ready", () => {
     console.log(`logged in as ${client.user.tag}`);
 });
 
-// login
 client.login(config.token);
