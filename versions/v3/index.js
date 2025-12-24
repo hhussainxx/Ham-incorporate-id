@@ -145,10 +145,11 @@ function wordsToNum(w) { w = String(w).toLowerCase(); return WORD_NUM[w] ?? null
 
 function extractPlayerCountFromText(text) {
     if (!text) return null;
-    const t = text.toLowerCase().replace(/[,!.?]/g, " ");
+    const raw = text.toLowerCase();
 
     // ignore questions
-    if (/\b(are\s+(you|u|we)|do\s+(you|u|we)|is\s+(it|the)|i\s+assume|assuming|maybe|might\s+be|could\s+be|if\s+(you|u)\s+don'?t\s+get)\b|\?/.test(t)) return null;
+    if (raw.includes("?") || /\b(are\s+(you|u|we)|do\s+(you|u|we)|is\s+(it|the)|i\s+assume|assuming|maybe|might\s+be|could\s+be|if\s+(you|u)\s+don'?t\s+get|this\s+looks\s+like\s+we\s+need)\b/.test(raw) || (/\bor\b/.test(raw) && /\b(we got|we have|got|have)\b/.test(raw))) return null;
+    const t = raw.replace(/[,!.?]/g, " ");
 
     // full detection
     if (/\b(full|lobby full|full lobby|we're full|we are full)\b/.test(t) || /\b6\s*\/\s*6\b/.test(t)) return 6;
@@ -195,12 +196,12 @@ async function updatePlayerCountForSession(session, count, originGuildId = null,
         session.lastActivity = now();
 
         // ping on first message
-        if (session.apiActive && !session.firstMessageSent) {
+        if (session.apiActive && !session.firstPingSent) {
             const regionRole = getRegionPingRole(originGuildId);
             if (regionRole) {
                 await sendPlainToChannel(session.tempChannelId, `<@&${regionRole}>`);
             }
-            session.firstMessageSent = true;
+            session.firstPingSent = true;
         }
 
         const speakerId = authorId ?? null;
@@ -291,12 +292,12 @@ async function updatePlayerCountForSession(session, count, originGuildId = null,
                 const labelLine = labels.join(" ");
 
                 // ping on first message
-                if (!session.firstMessageSent) {
+                if (!session.firstPingSent) {
                     const regionRole = getRegionPingRole(originGuildId);
                     if (regionRole) {
                         await sendPlainToChannel(session.tempChannelId, `<@&${regionRole}>`);
                     }
-                    session.firstMessageSent = true;
+                    session.firstPingSent = true;
                 }
 
                 let clarionMsg = `${expected > 0 ? labelLine + "\n" : ""}${session.code} | ${current}/6`;
@@ -386,21 +387,21 @@ async function updatePlayerCountForSession(session, count, originGuildId = null,
 
             // ping on first message
             const roleMention =
-                (!session.apiActive && !session.firstNormalPingSent && relayRegionRoleId)
+                (!session.apiActive && !session.firstPingSent && relayRegionRoleId)
                     ? `<@&${relayRegionRoleId}> `
                     : "";
 
             console.log("NORMAL BLOCK HIT", {
                 apiActive: session.apiActive,
-                firstNormalPingSent: session.firstNormalPingSent
+                firstPingSent: session.firstPingSent
             });
 
             const labels = serverLabelMessagesForGuild(originGuildId);
             const labelLine = labels.join(" ");  
-            formatted = `${session.firstNormalPingSent ? labelLine + "\n" : ""}${session.code} | ${count}/6`;
+            formatted = `${session.firstPingSent ? labelLine + "\n" : ""}${session.code} | ${count}/6`;
 
-            if (!session.apiActive && !session.firstNormalPingSent) {
-                session.firstNormalPingSent = true;
+            if (!session.apiActive && !session.firstPingSent) {
+                session.firstPingSent = true;
             }
 
             console.log("DEBUG: formatted line generated", { formatted });
@@ -440,7 +441,7 @@ async function createSessionFromStaging(guildId) {
     if (!s.pingSeen || !s.code || s.have === null) return null;
 
     const code = s.code;
-    const { id: tempId, reused } = await createTempChannel(code).catch(err => { console.log(`createTempChannel err ${err.message}`); return null; });
+    const { id: tempId, reused } = await createTempChannel(code).catch(err => { debugDC(`createTempChannel err ${err.message}`); return { id: null, reused: false }; });
     if (!tempId) return null;
 
     let session = sessions.get(code);
@@ -452,10 +453,13 @@ async function createSessionFromStaging(guildId) {
             id: crypto.randomUUID(),
             servers: new Set(),
             ggsSenders: new Set(),
-            firstMessageSent: false,
+            firstPingSent: false,
             lastClarionState: null,
         };
         sessions.set(code, session);
+    }
+    if (reused) {
+    session.firstPingSent = true;
     }
 
     // clarion state — initialise only if missing
@@ -477,11 +481,14 @@ async function createSessionFromStaging(guildId) {
     // send server + links, intro and delete button 
     const labels = serverLabelMessagesForGuild(guildId);
     const labelLine = labels.join(" ");
-   await sendPlainToChannel(tempId, labelLine);
-    await sendPlainToChannel(
-        tempId,
-        "If the custom game lobby has reached its **full** six players, then this channel has served its purpose. **Close it** to maintain order."
-    );
+   if (!reused) {
+        await sendPlainToChannel(tempId, labelLine);
+        await sendPlainToChannel(
+            tempId,
+            "If the custom game lobby has reached its full six players, then this channel has served its purpose. Close it to maintain order."
+        );
+        await sendPlainToChannel(tempId, null, drekarDeleteButtonRow());
+    }
 
     if (!reused) {
     await sendPlainToChannel(tempId, null, drekarDeleteButtonRow());
