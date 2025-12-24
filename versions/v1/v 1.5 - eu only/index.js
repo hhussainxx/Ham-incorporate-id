@@ -1,9 +1,6 @@
 const { Client, GatewayIntentBits, Partials, ChannelType, PermissionsBitField } = require("discord.js");
 const fs = require("fs");
-
-// load config (keep existing path)
 const config = JSON.parse(fs.readFileSync("./config.json", "utf8"));
-
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -13,7 +10,7 @@ const client = new Client({
     partials: [Partials.Channel]
 });
 
-// ---- debug channel logger ----
+
 async function debugDC(text) {
     try {
         if (!config.debug_channel) return;
@@ -25,22 +22,15 @@ async function debugDC(text) {
     }
 }
 
-// ---------------------
-// session store
-// ---------------------
-const sessions = new Map();                // code -> session
-const lastSessionForServer = new Map();   // guildId -> code  (// if only one active session exists, attribute to it; otherwise try to find session sharing the same code previously posted in this guild (we didn't store per-guild mapping).)
+const sessions = new Map();                
+const lastSessionForServer = new Map();
 
-// ---------------------
-// utilities
-// ---------------------
 function now() { return Date.now(); }
 
 function serverLabelMessagesForGuild(guildId) {
     const s = config.servers[guildId];
     if (!s) return [];
     if (s.invite) {
-        // send label and invite separately; suppress preview
         return [
             `[${s.name}]`,
             `<${s.invite}>`
@@ -85,9 +75,6 @@ async function sendPlainToChannel(channelId, text, ping = false, components = []
     }
 }
 
-// ------------------------------
-// extractors
-// ------------------------------
 function extractCode(text) {
     const CODE_REGEX = /([A-Z][a-z]{3,10}){3}/;  // game code
     const match = text.match(CODE_REGEX);
@@ -124,9 +111,6 @@ async function updatePlayerCountForSession(session, count, originGuildId = null)
     debugDC(`player count update: session=${session.code} count=${count}`);
 }
 
-// ------------------------------
-// drekar delete button
-// ------------------------------
 function drekarDeleteButtonRow() {
     return [{
         type: 1,
@@ -151,9 +135,6 @@ client.on("interactionCreate", async (i) => {
     }
 });
 
-// ------------------------------
-// session lifecycle
-// ------------------------------
 async function endSession(session, reasonText, originGuildId = null) {
     try {
         if (session.tempChannelId) {
@@ -172,7 +153,7 @@ async function endSession(session, reasonText, originGuildId = null) {
     }
 }
 
-// inactivity check using configured timeout
+// inactivity 
 setInterval(() => {
     const timeoutMs = config.session_timeout_ms ?? 3600000;
     const cutoff = now() - timeoutMs;
@@ -183,9 +164,6 @@ setInterval(() => {
     }
 }, 30000);
 
-// ------------------------------
-// message handler
-// ------------------------------
 client.on("messageCreate", async (msg) => {
     try {
         if (msg.author.bot) return;
@@ -213,12 +191,11 @@ client.on("messageCreate", async (msg) => {
                 sessions.set(code, session);
                 lastSessionForServer.set(guildId, code);
 
-                // send drekar-style intro + delete button, then code ping
                 const labels = serverLabelMessagesForGuild(guildId);
                 for (const m of labels) await sendPlainToChannel(tempId, m, false).catch(() => null);
-                // drekar intro text
+
                 await sendPlainToChannel(tempId, "if the custom lobby is full delete this chaneel.", false).catch(() => null);
-                // delete button
+
                 const row = drekarDeleteButtonRow();
                 await sendPlainToChannel(tempId, "", false, row).catch(() => null);
 
@@ -245,7 +222,7 @@ client.on("messageCreate", async (msg) => {
             return;
         }
 
-        // PLAYER COUNT ROUTING — use lastSessionForServer when ambiguous
+        // PLAYER COUNT ROUTING
         let targetSession = null;
         if (sessions.size === 1) targetSession = [...sessions.values()][0];
         else {
@@ -254,7 +231,6 @@ client.on("messageCreate", async (msg) => {
         }
         if (!targetSession) return;
 
-        // update activity for the chosen session
         targetSession.lastActivity = now();
         if (targetSession.timeout) clearTimeout(targetSession.timeout);
         targetSession.timeout = setTimeout(() => endSession(targetSession, "session ended (inactive)"), config.session_timeout_ms ?? 3600000);
