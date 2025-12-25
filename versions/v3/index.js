@@ -4,7 +4,6 @@ const fs = require("fs");
 const config = JSON.parse(fs.readFileSync("./config.json", "utf8"));
 const crypto = require("crypto");
 
-
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -14,7 +13,6 @@ const client = new Client({
     partials: [Partials.Channel]
 });
 
-
 const logStream = fs.createWriteStream("./console.log", { flags: "a" });
 const origLog = console.log;
 
@@ -23,7 +21,6 @@ console.log = (...args) => {
     logStream.write(line + "\n");
     origLog(...args);
 };
-
 
 // utils
 function now() { return Date.now(); }
@@ -38,9 +35,9 @@ async function debugDC(text) {
     }
 }
 
-
 //imports
 const { listAllCustomLobbies } = require("./clarion.js");
+const { getLinkedIGNs } = require("./clarion.js");
 const ign_map = require("./ign_map.json");
 
 // session & staging stores
@@ -80,13 +77,13 @@ async function createTempChannel(code) {
     const base = "the-gathering-begins";
     let name = `${base}-${safeCode}`.slice(0, 90);
 
-    const existing = relayGuild.channels.cache.find(
-        c => c.name === name && c.parentId === categoryId
-    );
+    await new Promise(res => setTimeout(res, 400)); // needed on slower machines so cache can be updated. ea like my raspberry pi  
+    const allChannels = await relayGuild.channels.fetch();
+    const existing = allChannels.find(c => c.name === name && c.parentId === categoryId);
 
     if (existing) {
-        console.log(`[TEMP CHANNEL REUSE] Using existing channel ${existing.id} for code ${code}`);
-        return { id: existing.id, reused: true };
+    console.log(`[TEMP CHANNEL REUSE] Using existing channel ${existing.id} for code ${code}`);
+    return { id: existing.id, reused: true };
     }
 
     let index = 1;
@@ -108,7 +105,6 @@ async function sendPlainToChannel(channelId, text, components = []) {
     if (!ch) return;
     await ch.send({ content: text, allowedMentions: { roles: Object.values(config.relay_region_pings || {}) }, components }).catch(() => null);
 }
-
 function drekarDeleteButtonRow() {
     return [{
         type: 1,
@@ -137,6 +133,34 @@ function serverLabelMessagesForGuild(guildId) {
     if (!s) return [];
     if (s.invite) return [`[${s.name}]`, `<${s.invite}>`];
     return [`[${s.name}]`];
+}
+
+function buildSessionMessage(session, originCfg, countOrCurrent, expected = null, remaining = null) {
+    const region = originCfg?.region;
+    const relayRegionRoleId =
+        region && config.relay_region_pings?.[region]
+            ? config.relay_region_pings[region]
+            : null;
+
+    const roleMention =
+        (!session.firstPingSent && relayRegionRoleId)
+            ? `<@&${relayRegionRoleId}> `
+            : "";
+
+    const labels = serverLabelMessagesForGuild(originCfg?.guildId);
+    const labelLine = labels.join(" ");
+
+    let msg = `${roleMention}${session.firstPingSent ? labelLine + "\n" : ""}${session.code} | ${countOrCurrent}/6`;
+
+    if (expected !== null && expected > 0) {
+    msg += `\n-# ${expected} player${expected === 1 ? "" : "s"} are expected to join (soon).`;
+    msg += `\n-# so, lobby needs ${remaining} more player${remaining === 1 ? "" : "s"} to be full.`;
+    }
+
+    if (!session.firstPingSent) {
+        session.firstPingSent = true;
+    }
+    return msg;
 }
 
 // count parser - permissive
@@ -177,7 +201,7 @@ function extractPlayerCountFromText(text) {
     //treat +x as need x more => have = 6 - x
     m = t.match(/(?:\+|plus)\s*([0-9])/);
     if (m) { const x = parseInt(m[1], 10); if (x === 0) return null; if (x >= 1 && x <= 5) return 6 - x; }
-
+    
     return null;
 }
 
@@ -189,31 +213,24 @@ function extractCode(text) {
     return match ? match[0] : null;
 }
 
-
 async function updatePlayerCountForSession(session, count, originGuildId = null, rawText = "", authorId = null) {
     try {
+        const originCfg = originGuildId ? config.servers[originGuildId] : null;
         let clarionHandled = false;
         session.lastActivity = now();
 
-        // ping on first message
-        if (session.apiActive && !session.firstPingSent) {
-            const regionRole = getRegionPingRole(originGuildId);
-            if (regionRole) {
-                await sendPlainToChannel(session.tempChannelId, `<@&${regionRole}>`);
-            }
-            session.firstPingSent = true;
-        }
+        let ignList = await getLinkedIGNs(session.ownerId);
 
         const speakerId = authorId ?? null;
-        const effectiveAuthorId =
-            ign_map?.[session.ownerId]
-                ? session.ownerId
-                : ign_map?.[speakerId]
-                    ? speakerId
-                    : null;
+        if (!ignList || ignList.length === 0) {
+            ignList = await getLinkedIGNs(speakerId);
+        }
 
-
-        let ignList = ign_map?.[effectiveAuthorId] ?? null;
+        if (!ignList || ignList.length === 0) {
+            ignList = ign_map?.[session.ownerId]
+                || ign_map?.[speakerId]
+                || null;
+        }
         if (ignList && !Array.isArray(ignList)) {
             ignList = [ignList];
         }
@@ -234,7 +251,7 @@ async function updatePlayerCountForSession(session, count, originGuildId = null,
             } else {
                 ign = ignList[0];
             }
-        } 
+        }
 
         // clarion api validation
         let clarionCount = null;
@@ -249,24 +266,23 @@ async function updatePlayerCountForSession(session, count, originGuildId = null,
             if (match) {
                 clarionCount = match.numPlayers;
                 const labels = serverLabelMessagesForGuild(originGuildId);
-                    session.apiActive = true;
+                session.apiActive = true;
 
-                    console.log("[CLARION LINKED]", {
-                        session: session.code,
-                        ign,
-                        owner: match.ownerUsername,
-                        players: `${match.numPlayers}/${match.lobbySize}`
-                    });
+                console.log("[CLARION LINKED]", {
+                    session: session.code,
+                    ign,
+                    owner: match.ownerUsername,
+                    players: `${match.numPlayers}/${match.lobbySize}`
+                });
             } else {
-                console.log(
+                debugDC(
                     "[CLARION VALIDATION] no lobby owned by author; falling back to message-based counts",
                     { ign }
                 );
             }
-        } 
+        }
 
         count = Math.max(1, Math.min(6, Number(count) || 1));
-
 
         if (clarionCount !== null && count >= clarionCount) {
 
@@ -283,37 +299,17 @@ async function updatePlayerCountForSession(session, count, originGuildId = null,
                 session.lastClarionState.expected === newState.expected &&
                 session.lastClarionState.remaining === newState.remaining
             ) {
-                console.log(`duplicate clarion state prevented for ${session.code}: ${JSON.stringify(newState)}`);
+                debugDC(`duplicate clarion state prevented for ${session.code}: ${JSON.stringify(newState)}`);
                 return;
             }
-
-            if (session.tempChannelId) {
-                const labels = serverLabelMessagesForGuild(originGuildId);
-                const labelLine = labels.join(" ");
-
-                // ping on first message
-                if (!session.firstPingSent) {
-                    const regionRole = getRegionPingRole(originGuildId);
-                    if (regionRole) {
-                        await sendPlainToChannel(session.tempChannelId, `<@&${regionRole}>`);
-                    }
-                    session.firstPingSent = true;
-                }
-
-                let clarionMsg = `${expected > 0 ? labelLine + "\n" : ""}${session.code} | ${current}/6`;
-
-                if (expected > 0) {
-                    clarionMsg +=
-                        `\n-# ${expected} player${expected === 1 ? "" : "s"} are expected to join (soon).` +
-                        `\n-# so, lobby needs ${remaining} more players to be full.`;
-                }
-                await sendPlainToChannel(session.tempChannelId, clarionMsg);
-            }
+            const msg = buildSessionMessage(session, originCfg, current, expected, remaining);
+            await sendPlainToChannel(session.tempChannelId, msg);
 
             session.lastClarionState = newState;
             session.lastPlayers = current;
             clarionHandled = true;
         }
+
         const debugLines = [
             "PLAYER COUNT UPDATE DEBUG",
             "========================================",
@@ -370,44 +366,15 @@ async function updatePlayerCountForSession(session, count, originGuildId = null,
         }
 
         if (session.lastPlayers === count) {
-            console.log(`duplicate player count prevented for ${session.code}: ${count}/6`);
+            debugDC(`duplicate player count prevented for ${session.code}: ${count}/6`);
             return;
         }
         session.lastPlayers = count;
 
         let formatted = "";
-        const originCfg = originGuildId ? config.servers[originGuildId] : null;
 
-        if (originCfg) {
-            const region = originCfg.region;
-            const relayRegionRoleId =
-                region && config.relay_region_pings?.[region]
-                    ? config.relay_region_pings[region]
-                    : null;
-
-            // ping on first message
-            const roleMention =
-                (!session.apiActive && !session.firstPingSent && relayRegionRoleId)
-                    ? `<@&${relayRegionRoleId}> `
-                    : "";
-
-            console.log("NORMAL BLOCK HIT", {
-                apiActive: session.apiActive,
-                firstPingSent: session.firstPingSent
-            });
-
-            const labels = serverLabelMessagesForGuild(originGuildId);
-            const labelLine = labels.join(" ");  
-            formatted = `${session.firstPingSent ? labelLine + "\n" : ""}${session.code} | ${count}/6`;
-
-            if (!session.apiActive && !session.firstPingSent) {
-                session.firstPingSent = true;
-            }
-
-            console.log("DEBUG: formatted line generated", { formatted });
-        } else {
-            formatted = `${session.code} | ${count}/6`;
-        }
+        const msg = buildSessionMessage(session, originCfg, count);
+        await sendPlainToChannel(session.tempChannelId, msg);
 
         if (session.tempChannelId) {
             await sendPlainToChannel(session.tempChannelId, formatted).catch(() => null);
@@ -418,7 +385,6 @@ async function updatePlayerCountForSession(session, count, originGuildId = null,
         }
     } catch (e) {
         console.log("updatePlayerCountForSession ERROR:", e);
-        console.log("updatePlayerCountForSession ERROR: " + (e.stack || e.message));
     }
 }
 
@@ -459,14 +425,13 @@ async function createSessionFromStaging(guildId) {
         sessions.set(code, session);
     }
     if (reused) {
-    session.firstPingSent = true;
+        session.firstPingSent = true;
     }
 
-    // clarion state — initialise only if missing
+    // session state
     session.apiActive ??= false;
     lastSessionForServer.set(guildId, code);
 
-    // session state
     session.tempChannelId = tempId;
     session.originChannelId = s.originChannelId;
     session.createdAt ??= now();
@@ -478,10 +443,11 @@ async function createSessionFromStaging(guildId) {
     session.authorId = s.authorId;
 
 
-    // send server + links, intro and delete button 
-    const labels = serverLabelMessagesForGuild(guildId);
-    const labelLine = labels.join(" ");
-   if (!reused) {
+    // send server + links, intro and delete button
+    if (!reused) {
+        const labels = serverLabelMessagesForGuild(guildId);
+        const labelLine = labels.join(" ");
+
         await sendPlainToChannel(tempId, labelLine);
         await sendPlainToChannel(
             tempId,
@@ -489,10 +455,6 @@ async function createSessionFromStaging(guildId) {
         );
         await sendPlainToChannel(tempId, null, drekarDeleteButtonRow());
     }
-
-    if (!reused) {
-    await sendPlainToChannel(tempId, null, drekarDeleteButtonRow());
-}
     if (s.have !== null) {
         await updatePlayerCountForSession(session, s.have, guildId, s.rawText || "", s.authorId);
     }
@@ -529,7 +491,7 @@ function promoteToCountWait(guildId) {
     s.timers = s.timers || {};
     if (s.timers.countTimer) clearTimeout(s.timers.countTimer);
     s.timers.countTimer = setTimeout(() => {
-        console.log(`count wait expired for guild ${guildId}`);
+        debugDC(`count wait expired for guild ${guildId}`);
         clearStaging(guildId);
     }, WAIT_FOR_COUNT_MS);
 }
@@ -548,12 +510,12 @@ client.on("messageCreate", async (msg) => {
         for (const session of sessions.values()) {
             if (session.tempChannelId === msg.channel.id) {
                 const parsed = extractPlayerCountFromText(raw);
-                
+
                 if (parsed === 6) {
                     await sendPlainToChannel(session.tempChannelId, `confirmed, full (6/6) \n-# closing channel in ${POST_FULL_DELAY_MS / 1000} seconds`).catch(() => null);
                     setTimeout(() => endSession(session, "session ended (full)"), POST_FULL_DELAY_MS);
                 }
-                return; 
+                return;
             }
         }
 
@@ -606,7 +568,7 @@ client.on("messageCreate", async (msg) => {
 
             if (s.pingSeen) promoteToCountWait(guildId);
             else if (!s.timers.pingCodeTimer) {
-                s.timers.pingCodeTimer = setTimeout(() => { console.log(`ping+code wait expired for guild ${guildId}`); clearStaging(guildId); }, WAIT_FOR_CODE_MS);
+                s.timers.pingCodeTimer = setTimeout(() => { debugDC(`ping+code wait expired for guild ${guildId}`); clearStaging(guildId); }, WAIT_FOR_CODE_MS);
             }
         }
 
@@ -647,7 +609,7 @@ client.on("messageCreate", async (msg) => {
     } catch (e) {
         console.log("updatePlayerCountForSession ERROR:", e);
         console.log("STACK:", e.stack);
-        console.log(" updatePlayerCountForSession ERROR: " + (e.stack || e.message));
+        debugDC(" updatePlayerCountForSession ERROR: " + (e.stack || e.message));
     }
 
 });
@@ -661,9 +623,9 @@ async function endSession(session, reasonText, originGuildId = null) {
             const ch = client.channels.cache.get(session.tempChannelId);
             if (ch && ch.deletable) await ch.delete().catch(() => null);
         }
-        
+
     } catch (e) {
-        console.log("endSession error", e.message);
+        debugDC("endSession error", e.message);
     } finally {
         if (session.timeout) clearTimeout(session.timeout);
         sessions.delete(session.code);
@@ -680,8 +642,7 @@ setInterval(() => {
 }, 30000);
 
 client.on("clientReady", () => {
-    console.log(`logged in as ${client.user.tag}`);
+console.log(`logged in as ${client.user.tag}`);
 });
-
 
 client.login(process.env.DISCORD_TOKEN);
