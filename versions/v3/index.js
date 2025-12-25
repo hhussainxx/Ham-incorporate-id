@@ -22,7 +22,6 @@ console.log = (...args) => {
     origLog(...args);
 };
 
-// utils
 function now() { return Date.now(); }
 async function debugDC(text) {
     try {
@@ -35,24 +34,20 @@ async function debugDC(text) {
     }
 }
 
-//imports
 const { listAllCustomLobbies } = require("./clarion.js");
 const { getLinkedIGNs } = require("./clarion.js");
 const ign_map = require("./ign_map.json");
 
-// session & staging stores
-const sessions = new Map();              // code -> session
-const lastSessionForServer = new Map();  // guildId -> code
-const staging = new Map();               // guildId -> { code, have, pingSeen, timers, createdAt, reused }
+const sessions = new Map();              
+const lastSessionForServer = new Map(); 
+const staging = new Map();              
 
-// defaults (config overrideable)
-const WAIT_FOR_CODE_MS = config.wait_for_code_ms ?? 120000; // 2 minutes
-const WAIT_FOR_COUNT_MS = config.wait_for_count_ms ?? 10 * 60 * 1000; // 10 minutes
-const POST_FULL_DELAY_MS = config.post_full_delay_ms ?? 7000; // 7 seconds
-const INACTIVITY_MS = config.session_timeout_ms ?? 3600000; // 1 hour
+const WAIT_FOR_CODE_MS = config.wait_for_code_ms ?? 120000;
+const WAIT_FOR_COUNT_MS = config.wait_for_count_ms ?? 10 * 60 * 1000; 
+const POST_FULL_DELAY_MS = config.post_full_delay_ms ?? 7000; 
+const INACTIVITY_MS = config.session_timeout_ms ?? 3600000; 
 
 
-// prevent dups temp for the same code
 function getActiveSessionByCode(code) {
     if (!code) return null;
     return sessions.get(code) || null;
@@ -152,7 +147,7 @@ function buildSessionMessage(session, originCfg, countOrCurrent, expected = null
 
     let msg = `${roleMention}${session.firstPingSent ? labelLine + "\n" : ""}${session.code} | ${countOrCurrent}/6`;
 
-    if (expected !== null && expected > 0) {
+    if (expected > 0) {
     msg += `\n-# ${expected} player${expected === 1 ? "" : "s"} are expected to join (soon).`;
     msg += `\n-# so, lobby needs ${remaining} more player${remaining === 1 ? "" : "s"} to be full.`;
     }
@@ -163,7 +158,6 @@ function buildSessionMessage(session, originCfg, countOrCurrent, expected = null
     return msg;
 }
 
-// count parser - permissive
 const WORD_NUM = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
 function wordsToNum(w) { w = String(w).toLowerCase(); return WORD_NUM[w] ?? null; }
 
@@ -205,10 +199,10 @@ function extractPlayerCountFromText(text) {
     return null;
 }
 
-// extract code - flexible pattern
+
 function extractCode(text) {
     if (!text) return null;
-    const CODE_REGEX = /\b([A-Z][a-z]{3,10}){3}\b/;  // game code
+    const CODE_REGEX = /\b([A-Z][a-z]{3,10}){3}\b/; 
     const match = text.match(CODE_REGEX);
     return match ? match[0] : null;
 }
@@ -240,8 +234,7 @@ async function updatePlayerCountForSession(session, count, originGuildId = null,
 
         if (ignList && ignList.length > 0) {
             const lobbies = await listAllCustomLobbies();
-
-            // find lobby owned by any of the ign(s)
+            
             match = lobbies.find(l =>
                 ignList.some(i => i.toLowerCase() === l.ownerUsername?.toLowerCase())
             );
@@ -412,7 +405,6 @@ async function createSessionFromStaging(guildId) {
 
     let session = sessions.get(code);
 
-    // create session only if it does not exist
     if (!session) {
         session = {
             code,
