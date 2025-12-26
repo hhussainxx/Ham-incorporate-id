@@ -31,7 +31,7 @@ the goal is not to replace how servers run customs, but to **amplify** them by s
 ## current status
 this bot is actively used and evolving. currently using v3
 
-the code is public for transparency and trust, not because it is a plug and play solution.
+the code is public for transparency and trust, not because it's a plug-and-play solution.
 
 ## setup notes
 this repository does not include:
