@@ -29,7 +29,7 @@ the goal is not to replace how servers run customs, but to **amplify** them by s
 - reliability over cleverness
 
 ## current status
-this bot is actively used and evolving.
+this bot is actively used and evolving. currently using v3
 the code is public for transparency and trust, not because it is a plug and play solution.
 
 ## setup notes
