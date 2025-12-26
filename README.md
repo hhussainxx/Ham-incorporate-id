@@ -23,7 +23,6 @@ the goal is not to replace individual servers, but to give them a wider pool to 
 the goal is not to replace how servers run customs, but to **amplify** them by sharing visibility across communities.
 
 ## design philosophy
-- no game codes are exposed
 - private lobbies stay private
 - the bot only relays information players already choose to share
 - api data is used when available, but message parsing is kept as a fallback
